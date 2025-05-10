@@ -1,159 +1,155 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demo Ray Tracing Dasar - Perpotongan Bola</title>
+    <title>Basic Raytracing Demo - Phong Lighting</title>
+    <!-- Include glMatrix library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+    <!-- Include our helper functions -->
+    <script src="helper.js"></script>
     <style>
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #f0f0f0;
-            margin: 0;
-            font-family: sans-serif;
-        }
         canvas {
-            border: 1px solid black;
-            background-color: #ffffff;
+            display: block;
+            margin: 20px auto;
+            border: 1px solid #000;
         }
-        #container {
+        .controls {
             text-align: center;
-        }
-        h1 {
-           margin-bottom: 10px;
+            margin: 10px auto;
+            max-width: 500px;
         }
     </style>
 </head>
 <body>
-    <div id="container">
-         <h1>Demo Ray Tracing Dasar (Perpotongan Bola)</h1>
-         <canvas id="raytraceCanvas" width="500" height="500"></canvas>
-    </div>
-
-    <script id="vector-helpers">
-        // --- Fungsi Bantuan Vektor ---
-
-        // Pengurangan dua vektor (a - b)
-        function vecSubtract(a, b) {
-            return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
-        }
-
-        // Perkalian dot dua vektor
-        function vecDot(a, b) {
-            return a.x * b.x + a.y * b.y + a.z * b.z;
-        }
-
-        // Menghitung panjang (magnitude) vektor
-        function vecLength(a) {
-            return Math.sqrt(vecDot(a, a));
-        }
-
-        // Normalisasi vektor (membuat panjangnya menjadi 1)
-        function vecNormalize(a) {
-            const len = vecLength(a);
-            if (len === 0) return { x: 0, y: 0, z: 0 }; // Hindari pembagian dengan nol
-            return { x: a.x / len, y: a.y / len, z: a.z / len };
-        }
-    </script>
-
-    <script id="raytracer-logic">
-        // --- Konfigurasi & Inisialisasi ---
-        const canvas = document.getElementById('raytraceCanvas');
-        const ctx = canvas.getContext('2d');
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-
-        // Definisi Bola
-        const sphere = {
-            center: { x: 0, y: 0, z: 5 }, // Posisi tengah bola di depan kamera
-            radius: 1.5,                  // Jari-jari bola
-            color: { r: 255, g: 0, b: 0 } // Warna bola (merah)
-        };
-
-        // Definisi Kamera (Mata)
-        const camera = {
-            origin: { x: 0, y: 0, z: 0 } // Posisi kamera di titik origin
-        };
-
-        // Warna Latar Belakang
-        const backgroundColor = { r: 100, g: 149, b: 237 }; // Cornflower blue
-
-        // --- Fungsi Ray-Sphere Intersection ---
-        // Mengembalikan nilai t (jarak) jika ada perpotongan, atau null jika tidak.
-        function intersectSphere(rayOrigin, rayDirection, sphere) {
-            const oc = vecSubtract(rayOrigin, sphere.center); // Vektor dari pusat bola ke asal sinar
-            const a = vecDot(rayDirection, rayDirection); // Harus 1 jika rayDirection dinormalisasi
-            const b = 2.0 * vecDot(oc, rayDirection);
-            const c = vecDot(oc, oc) - sphere.radius * sphere.radius;
-            const discriminant = b * b - 4 * a * c;
-
-            if (discriminant < 0) {
-                return null; // Tidak ada perpotongan nyata
-            } else {
-                // Mengembalikan jarak ke titik perpotongan terdekat
-                const t = (-b - Math.sqrt(discriminant)) / (2.0 * a);
-                 // Kita hanya tertarik pada perpotongan di depan kamera (t > 0)
-                if (t > 0.001) { // Gunakan epsilon kecil untuk menghindari self-intersection
-                   return t;
-                }
-                // Cek perpotongan kedua jika yang pertama di belakang
-                const t2 = (-b + Math.sqrt(discriminant)) / (2.0 * a);
-                 if (t2 > 0.001) {
-                    return t2;
-                 }
-                return null; // Kedua perpotongan di belakang atau tepat di origin
-            }
-        }
-
-        // --- Proses Rendering ---
-        function render() {
-            console.time("Render Time"); // Mulai timer
-            const imageData = ctx.createImageData(canvasWidth, canvasHeight);
+    <canvas id="raytracingCanvas" width="500" height="500"></canvas>
+    
+    <script>
+        // Wait for the page to load
+        window.onload = function() {
+            // Get the canvas and context
+            const canvas = document.getElementById('raytracingCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Create image data to manipulate pixels directly
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
             const data = imageData.data;
-
-            for (let y = 0; y < canvasHeight; y++) {
-                for (let x = 0; x < canvasWidth; x++) {
-                    // 1. Konversi koordinat piksel (x, y) ke koordinat world space (-1 to 1)
-                    //    (0,0) di canvas adalah kiri atas, kita ingin (0,0) di tengah
-                    //    Kita asumsikan view plane berada di z=1
-                    const Px = (2 * (x + 0.5) / canvasWidth - 1) * (canvasWidth / canvasHeight); // Koreksi aspek rasio
-                    const Py = (1 - 2 * (y + 0.5) / canvasHeight);
-                    const Pz = 1; // Jarak view plane dari kamera
-
-                    // 2. Hitung arah sinar (ray direction) dari kamera ke piksel
-                    const rayDirectionWorld = { x: Px, y: Py, z: Pz }; // Arah relatif thd kamera
-                    // Vektor arah dari origin kamera ke titik di view plane
-                    const rayDirection = vecNormalize(vecSubtract(rayDirectionWorld, camera.origin)); // Normalisasi arah sinar
-
-                    // 3. Cek perpotongan sinar dengan bola
-                    const intersection = intersectSphere(camera.origin, rayDirection, sphere);
-
-                    // 4. Tentukan warna piksel
-                    let pixelColor = backgroundColor;
-                    if (intersection !== null) {
-                        pixelColor = sphere.color; // Jika berpotongan, gunakan warna bola
-                    }
-
-                    // 5. Set data warna piksel (RGBA)
-                    const index = (y * canvasWidth + x) * 4;
-                    data[index]     = pixelColor.r; // Red
-                    data[index + 1] = pixelColor.g; // Green
-                    data[index + 2] = pixelColor.b; // Blue
-                    data[index + 3] = 255;          // Alpha (opaque)
+            
+            // Canvas dimensions
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Camera setup
+            const cameraPosition = vec3.fromValues(0, 2, -5);
+            const cameraLookAt = vec3.fromValues(0, 0, 0);
+            const cameraUp = vec3.fromValues(0, 1, 0);
+              // Light setup
+            const lights = [
+                {
+                    position: vec3.fromValues(3, 4, -2), // Adjusted position to make shadows more visible
+                    intensity: 1.0
                 }
+            ];
+            
+            // Material properties
+            const defaultMaterial = {
+                ambient: 0.2,
+                diffuse: 0.7,
+                specular: 0.5,
+                shininess: 32
+            };
+            
+            // Scene objects definition
+            const objects = [
+                {
+                    type: 'sphere',
+                    center: vec3.fromValues(-1.5, 1, 0),
+                    radius: 1.0,
+                    color: [1.0, 0.2, 0.2], // Red sphere
+                    material: {
+                        ...defaultMaterial,
+                        specular: 0.8,  // More shiny
+                        shininess: 64
+                    }
+                },
+                {
+                    type: 'sphere',
+                    center: vec3.fromValues(1.5, 0.7, 1),
+                    radius: 0.7,
+                    color: [0.2, 1.0, 0.2], // Green sphere
+                    material: {
+                        ...defaultMaterial,
+                        specular: 0.3,  // Less shiny
+                        shininess: 16
+                    }
+                },
+                {
+                    type: 'sphere',
+                    center: vec3.fromValues(0, 1.2, -1),
+                    radius: 0.8,
+                    color: [0.2, 0.2, 1.0], // Blue sphere
+                    material: defaultMaterial
+                },
+                {
+                    type: 'plane',
+                    point: vec3.fromValues(0, 0, 0),
+                    normal: vec3.fromValues(0, 1, 0),
+                    color: [0.5, 0.5, 0.5], // Gray floor
+                    material: {
+                        ambient: 0.2,
+                        diffuse: 0.8,
+                        specular: 0.3,
+                        shininess: 16
+                    }
+                }
+            ];
+            
+            // Background color
+            const backgroundColor = [0, 0, 0, 255]; // Black (RGBA)
+            
+            // Main raytracing function
+            function raytrace() {
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        // Get ray direction for this pixel
+                        const rayDir = getRayDirection(x, y, width, height);
+                        
+                        // Find the closest intersection with any object in the scene
+                        const intersection = findClosestIntersection(cameraPosition, rayDir, objects);
+                        
+                        // Calculate pixel index (4 values per pixel: R,G,B,A)
+                        const pixelIndex = (y * width + x) * 4;
+                        
+                        if (intersection) {
+                            // Calculate view direction (from intersection point to camera)
+                            const viewDir = vec3.create();
+                            vec3.subtract(viewDir, cameraPosition, intersection.point);
+                            vec3.normalize(viewDir, viewDir);
+                              // Calculate lighting using Phong model with shadows
+                            const color = calculatePhongLighting(intersection, viewDir, lights, objects);
+                            
+                            // Set pixel color with lighting
+                            data[pixelIndex] = color[0];     // R
+                            data[pixelIndex + 1] = color[1]; // G
+                            data[pixelIndex + 2] = color[2]; // B
+                            data[pixelIndex + 3] = 255;      // A
+                        } else {
+                            // No hit, set to background color
+                            data[pixelIndex] = backgroundColor[0];     // R
+                            data[pixelIndex + 1] = backgroundColor[1]; // G
+                            data[pixelIndex + 2] = backgroundColor[2]; // B
+                            data[pixelIndex + 3] = backgroundColor[3]; // A
+                        }
+                    }
+                }
+                
+                // Put the image data onto the canvas
+                ctx.putImageData(imageData, 0, 0);
             }
-
-            // Gambar hasil ke canvas
-            ctx.putImageData(imageData, 0, 0);
-            console.timeEnd("Render Time"); // Akhiri timer dan tampilkan durasi
-            console.log("Rendering selesai.");
-        }
-
-        // --- Mulai Rendering ---
-        render();
-
+            
+            // Run the raytracer
+            raytrace();
+        };
     </script>
 </body>
 </html>
